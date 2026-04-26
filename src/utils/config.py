@@ -32,10 +32,10 @@ class CheckpointConfig:
 
 @dataclass
 class DataConfig:
-    root_dir: str = "./data",
-    batch_size: int = 2,
-    num_workers: int = 4,
-    drop_index: int = 2,
+    root_dir: str = "./data"
+    batch_size: int = 2
+    num_workers: int = 4
+    drop_index: int = 2
     cache_num: int = 100
     prob: float = 0.8
 
@@ -67,12 +67,11 @@ def load_config(config_path: str) -> TrainingConfig:
 
     loss = LossConfig(**loss_data)
     checkpoint = CheckpointConfig(**checkpoint_data)
-    data_config = CheckpointConfig(**data_dict)
-
+    data_config = DataConfig(**data_dict)
     config = TrainingConfig(
         loss=loss,
         checkpoint=checkpoint,
-        data=data_config
+        data=data_config,
         **data
     )
 
