@@ -20,7 +20,7 @@ class DropModalityd(MapTransform):
     
 class RandomDropModalityd(RandomizableTransform, MapTransform):
     def __init__(self, keys, modalities: int, prob: float = 0.5, allow_missing_keys: bool = False):
-        MapTransform.__init__(keys, allow_missing_keys)
+        MapTransform.__init__(self, keys, allow_missing_keys)
         self.modalities = list(range(modalities))
         self.prob = prob
 
