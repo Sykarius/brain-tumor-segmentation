@@ -231,3 +231,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# data
+data/
+!src/data
+data/BraTS*
+*.nii.gz
+*.tar
+
+# pre-trained models
+bundles/brats_mri_segmentation
