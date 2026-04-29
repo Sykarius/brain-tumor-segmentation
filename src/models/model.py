@@ -39,13 +39,21 @@ class SegResNet(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
-        self.model_features = None
+        self.hook_configs = [
+            ("down_1", 1, 32),
+            ("down_2", 2, 64),
+            ("down_3", 3, 128),
+        ]
+
+        self.model_features = {}
         self._register_hook()
 
-        penultimate_channels = 32
         latent_dim = 128
 
-        self.projector = self._build_projector(penultimate_channels, latent_dim)
+        self.projector = nn.ModuleDict({
+            key: self._build_projector(channels, latent_dim)
+            for key, _, channels in self.hook_configs
+        })
 
     
     def _build_projector(self, in_channels, out_channels):
@@ -57,14 +65,21 @@ class SegResNet(nn.Module):
         )
 
     def _register_hook(self):
-        def get_features(module, input, output):
-            self.model_features = output
-        feature_layer = list(self.model.children())[-2]
-        feature_layer.register_forward_hook(get_features)
+        def get_hook(name):
+            def hook(module, input, output):
+                self.model_features[name] = output
+            return hook
+        
+        for key, idx, _ in self.hook_configs:
+            self.model.down_layers[idx].register_forward_hook(get_hook(key))
 
     def forward(self, inputs):
 
         output_logits = self.model(inputs)
-        projected_features = self.projector(self.model_features)
+        
+        projected_features = [
+            self.projector[key](self.model_features[key])
+            for key, _, _ in self.hook_configs
+        ]
 
         return output_logits, projected_features

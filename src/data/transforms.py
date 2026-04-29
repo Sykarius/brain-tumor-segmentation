@@ -1,6 +1,6 @@
 import os
 from monai.bundle import ConfigParser
-from monai.transforms import Compose, MapTransform, EnsureTyped, RandomizableTransform, CopyItemsd
+from monai.transforms import Compose, MapTransform, EnsureTyped, RandomizableTransform, CopyItemsd, ConvertToMultiChannelBasedOnBratsClassesd, LoadImaged
 import torch
 
 class DropModalityd(MapTransform):
@@ -34,7 +34,7 @@ class RandomDropModalityd(RandomizableTransform, MapTransform):
         return d
 
 def get_bundle_transforms(bundle_dir: str = "./bundles/brats_mri_segmentation"):
-    config_path = os.path.join(bundle_dir, "configs", "inference.json")
+    config_path = os.path.join(bundle_dir, "configs", "train.json")
     
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Bundle config not found at {config_path}.")
@@ -42,7 +42,7 @@ def get_bundle_transforms(bundle_dir: str = "./bundles/brats_mri_segmentation"):
     parser = ConfigParser()
     parser.read_config(config_path)
     
-    official_transforms = parser.get_parsed_content("preprocessing")
+    official_transforms = parser.get_parsed_content("train#preprocessing")
     return official_transforms
 
 
@@ -54,7 +54,7 @@ def get_dual_pipeline_transforms(
 ):
     official_transforms = get_bundle_transforms()
     transform_list = list(official_transforms.transforms)
-    
+
     # Duplicate the preprocessed image before dropping anything
     transform_list.append(CopyItemsd(keys=["image"], times=1, names=["image_full"]))
     
@@ -64,10 +64,9 @@ def get_dual_pipeline_transforms(
         )
     else:
         transform_list.append(
-            DropModalityd(keys=["image"], drop_index=drop_index)
+            DropModalityd(keys=["image"], modalities=modalities, drop_index=drop_index)
         )
     
-    transform_list.append(EnsureTyped(keys=["image", "image_full"], dtype=torch.float32))
-    transform_list.append(EnsureTyped(keys=["label"], dtype=torch.long))
+    transform_list.append(EnsureTyped(keys=["image", "image_full", "label"], dtype=torch.float32))
     
     return Compose(transform_list)

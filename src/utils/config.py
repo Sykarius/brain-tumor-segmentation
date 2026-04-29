@@ -21,6 +21,7 @@ class LossConfig:
     temperature: float
     granularity: Literal["dense", "region", "global"] = "dense"
     kl_temperature: float = 2.0
+    max_samples: float = 4096
 
 @dataclass
 class CheckpointConfig:
@@ -38,6 +39,10 @@ class DataConfig:
     drop_index: int = 2
     cache_num: int = 100
     prob: float = 0.8
+
+    # For simple testing the pipeline with few samples
+    test: bool = False
+    repeat_test_samples: int = 10
 
 
 @dataclass
@@ -61,7 +66,7 @@ def load_config(config_path: str) -> TrainingConfig:
     with open(config_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
-    loss_data = data.pop("loss_config", {})
+    loss_data = data.pop("loss", {})
     checkpoint_data = data.pop("checkpoint", {})
     data_dict = data.pop("data", {})
 

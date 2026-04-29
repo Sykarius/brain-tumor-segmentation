@@ -9,6 +9,7 @@ from losses.composite import CompositeDistillationLoss
 from utils.config import TrainingConfig
 from utils.checkpoint import EarlyStoppingCheckpointer
 from utils.logger import TensorBoardLogger
+from utils.config import load_config
 
 def main(config: TrainingConfig):
     device = config.device
@@ -46,7 +47,7 @@ def main(config: TrainingConfig):
 
         progress_bar = tqdm(train_loader, desc="Training")
         for batch in progress_bar:
-            # Move data to MPS
+
             full_inputs = batch["image_full"].to(device)
             missing_inputs = batch["image"].to(device)
             labels = batch["label"].to(device)
@@ -123,3 +124,7 @@ def main(config: TrainingConfig):
             if checkpointer.early_stop:
                 print(f"Eary stopping triggered. Halting training.")
                 break
+
+if __name__ == "__main__":
+    config = load_config("./config/test.yaml")
+    main(config)

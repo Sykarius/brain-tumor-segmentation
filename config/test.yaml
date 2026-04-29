@@ -1,0 +1,29 @@
+lr: 0.0001
+epochs: 1
+loss:
+  alpha: 1
+  beta: 0.1
+  gamma: 0.1
+  temperature: 1.0
+  granularity: "dense"
+  kl_temperature: 2.0
+  max_samples: 4096
+checkpoint:
+  save_dir: "./checkpoints"
+  filename: "test_model.pt"
+  patience: 5
+  min_delta: 0.0001
+  mode: max
+data:
+  root_dir: "./data/BraTS2021"
+  batch_size: 1
+  num_workers: 4
+  drop_index: 2
+  cache_num: 100
+  prob: 0.8
+  test: true
+  repeat_test_samples: 4
+bundle_dir: "./bundles/brats_mri_segmentation"
+logging_dir: "./logs/test"
+weight_decay: 0.00001
+device: "mps"
