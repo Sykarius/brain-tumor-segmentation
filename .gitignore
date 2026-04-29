@@ -240,4 +240,7 @@ data/BraTS*
 *.tar
 
 # pre-trained models
-bundles/brats_mri_segmentation
+bundles
+
+# logs
+logs

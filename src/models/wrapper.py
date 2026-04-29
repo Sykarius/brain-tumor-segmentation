@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 
-from .seg_res_net import SegResNet
+from .model import SegResNet
 
 class ContrastiveDistillationWrapper(nn.Module):
     def __init__(self, bundle_dir: str = "./models/brats_mri_segmentation"):
