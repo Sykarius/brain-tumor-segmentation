@@ -32,7 +32,7 @@ class CompositeDistillationLoss(nn.Module):
 
         # 3. Intra Patient CRD
         self.crd_loss_fn = IntraPatientInfoNCE(
-            temperature=config.temperature, granularity=config.granularity, max_samples=config.max_samples
+            temperature=config.temperature, aggregation=config.aggregation, max_samples=config.max_samples
         )
 
     def forward(self, s_logits, t_logits, s_embeddings, t_embeddings, labels):
