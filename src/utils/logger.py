@@ -46,22 +46,25 @@ class TensorBoardLogger:
         for i in range(samples_to_log):
             # 1. Extract the specific patient from the batch
             img_vol = inputs[i]  # Shape: (C, D, H, W)
-            lbl_vol = labels[i]  # Shape: (1, D, H, W)
-            prd_vol = predictions[i] # Shape: (1, D, H, W)
+            lbl_vol = labels[i]  # Shape: (3, D, H, W)
+            prd_vol = predictions[i] # Shape: (3, D, H, W)
 
             D = img_vol.shape[1]
             mid_d = D // 2
 
             # Shape becomes (C, H, W) or (1, H, W)
             img_slice = img_vol[:, mid_d, :, :]
-            lbl_slice = lbl_vol[:, mid_d, :, :].float() 
-            prd_slice = prd_vol[:, mid_d, :, :].float()
+            # Visualize ET channel by default for 3-channel BraTS labels: TC, WT, ET.
+            region_idx = 2 if lbl_vol.shape[0] > 2 else 0
+            
+            lbl_slice = lbl_vol[region_idx:region_idx + 1, mid_d, :, :].float()
+            prd_slice = prd_vol[region_idx:region_idx + 1, mid_d, :, :].float()
 
             bg_slice = img_slice[0:1, :, :] # Keep as (1, H, W)
 
             bg_slice = (bg_slice - bg_slice.min()) / (bg_slice.max() - bg_slice.min() + 1e-8)
 
-            max_lbl = max(lbl_slice.max(), 1.0)
+            max_lbl = max(lbl_slice.max().item(), 1.0)
             lbl_slice = lbl_slice / max_lbl
             prd_slice = prd_slice / max_lbl
 
