@@ -30,7 +30,7 @@ def main(config: TrainingConfig):
     optimizer = optim.AdamW(wrapper.student.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     
     # MONAI's metric for evaluation
-    dice_metric = DiceMetric(include_background=False, reduction="mean")
+    dice_metric = DiceMetric(include_background=True, reduction="mean")
 
     # Checkpointer
     checkpointer = EarlyStoppingCheckpointer(config.checkpoint)
@@ -41,9 +41,10 @@ def main(config: TrainingConfig):
     for epoch in range(epochs):
         print(f"\n--- Epoch {epoch+1}/{epochs} ---")
         
-        wrapper.train()
+        wrapper.student.train()
+        wrapper.teacher.eval()
         epoch_loss = 0.0
-        step_metrics = {"seg": 0.0, "kl": 0.0, "crd": 0.0}
+        step_metrics = {"seg": 0.0, "kd": 0.0, "crd": 0.0}
 
         progress_bar = tqdm(train_loader, desc="Training")
         for batch in progress_bar:
@@ -66,7 +67,7 @@ def main(config: TrainingConfig):
             # Tracking
             epoch_loss += loss.item()
             step_metrics["seg"] += loss_dict["loss_seg"]
-            step_metrics["kl"] += loss_dict["loss_kl"]
+            step_metrics["kd"] += loss_dict["loss_kd"]
             step_metrics["crd"] += loss_dict["loss_crd"]
 
             if global_step % 10 == 0:
@@ -82,7 +83,7 @@ def main(config: TrainingConfig):
         num_batches = len(train_loader)
         print(f"Train Loss: {epoch_loss/num_batches:.4f} | "
               f"Seg: {step_metrics['seg']/num_batches:.4f} | "
-              f"KL: {step_metrics['kl']/num_batches:.4f} | "
+              f"KD: {step_metrics['kd']/num_batches:.4f} | "
               f"CRD: {step_metrics['crd']/num_batches:.4f}")
 
         # --- VALIDATION PHASE ---
@@ -97,8 +98,9 @@ def main(config: TrainingConfig):
                 # We bypass the wrapper logic and evaluate the Student directly
                 val_logits, _ = wrapper.student(missing_inputs)
                 
-                # Convert logits to discrete predictions (Argmax over channels)
-                val_preds = torch.argmax(val_logits, dim=1, keepdim=True)
+                # Convert multilabel logits to binary TC/WT/ET predictions
+                val_probs = torch.sigmoid(val_logits)
+                val_preds = (val_probs > 0.5).float()
                 
                 # Compute Dice score for this volume
                 dice_metric(y_pred=val_preds, y=labels)
@@ -122,7 +124,7 @@ def main(config: TrainingConfig):
             # Early Stop
             checkpointer(current_val_dice, wrapper.student.model)
             if checkpointer.early_stop:
-                print(f"Eary stopping triggered. Halting training.")
+                print(f"Early stopping triggered. Halting training.")
                 break
 
 if __name__ == "__main__":
