@@ -3,23 +3,94 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FeatureAggregator(nn.Module):
-    def __init__(self, granularity: str = "dense", max_samples: float = 4096):
+    def __init__(self, aggregation: str = "avg_pool", max_samples: float = 4096):
         super().__init__()
-        valid_modes = ["global", "region", "dense"]
-        if granularity not in valid_modes:
-            raise ValueError(f"Granularity must be one of {valid_modes}")
-        self.granularity = granularity
+        valid_modes = ["random", "avg_pool", "class_balanced"]
+        if aggregation not in valid_modes:
+            raise ValueError(f"Aggregation mode must be one of {valid_modes}")
+        self.aggregation = aggregation
         self.max_samples = max_samples
+        self.num_classes = 4
+    
+    def _get_target_shape(self, D: int, H: int, W: int):
+        total_voxels = D * H * W
+        if total_voxels <= self.max_samples:
+            return (D, H, W)
+        scale = (self.max_samples / total_voxels) ** (1 / 3.0)
+
+        D_out = max(1, int(D * scale))
+        H_out = max(1, int(H * scale))
+        W_out = max(1, int(W * scale))
+        
+        return (D_out, H_out, W_out)
+
+
 
     def forward(self, s_embeddings, t_embeddings, labels=None):
-        if self.granularity == "global":
-            raise NotImplementedError(f"This does not work with Intra Sample CRD")
+        B, C, D, H, W = s_embeddings.shape
+        if self.aggregation == "avg_pool":
+            target_shape = self._get_target_shape(D, H, W)
 
-        elif self.granularity == "region":
-            raise NotImplementedError(f"Need to implemented in the future.")
+            s_embeddings = F.adaptive_avg_pool3d(s_embeddings, target_shape)
+            t_embeddings = F.adaptive_avg_pool3d(t_embeddings, target_shape)
 
-        elif self.granularity == "dense":
-            B, C, D, H, W = s_embeddings.shape
+            s_flat = s_embeddings.view(B, C, -1).transpose(1, 2)
+            t_flat = t_embeddings.view(B, C, -1).transpose(1, 2)
+
+            return s_flat, t_flat
+
+        elif self.aggregation == "class_balanced":
+            if labels is None:
+                raise ValueError(f"Labels cannot be none for {self.aggregation}")
+            
+            s_flat = s_embeddings.view(B, C, -1).transpose(1, 2)
+            t_flat = t_embeddings.view(B, C, -1).transpose(1, 2)
+            
+            # Ensure labels have channel dim for interpolation: (B, 1, D, H, W)
+            if labels.dim() == 4:
+                labels = labels.unsqueeze(1)
+
+            resized_labels = F.interpolate(labels, size=(D, H, W), mode="nearest")
+            labels_flat = resized_labels.view(B, -1)
+
+            s_sampled_batch = []
+            t_sampled_batch = []
+
+            for i in range(B):
+                s_i = s_flat[i]
+                t_i = t_flat[i]
+                l_i = labels_flat[i]
+
+                samples_per_class = self.max_samples // self.num_classes
+                sampled_indices = []
+                for cls in range(self.num_classes):
+                    cls_indices = torch.nonzero(l_i == cls).squeeze()
+                    if cls_indices.dim() == 0:
+                        cls_indices = cls_indices.unsqueeze(0)
+                    num_cls_voxels = cls_indices.size(0)
+
+                    if num_cls_voxels > samples_per_class:
+                        rand_perm = torch.randperm(num_cls_voxels, device=s_i.device)
+                        sampled_indices.append(cls_indices[rand_perm])
+                    else:
+                        sampled_indices.append(cls_indices)
+                    
+                selected_indeces = torch.cat(sampled_indices)
+
+                if selected_indeces.size(0) < self.max_samples:
+                    shortfall = self.max_samples - selected_indeces.size(0)
+                    pad_indices = torch.randperm(l_i.size(0), device=s_i.device)[:shortfall]
+                    selected_indeces = torch.cat([selected_indeces, pad_indices])
+                
+                final_perm = torch.randperm(selected_indeces.size(0), device=s_i.device)
+                selected_indeces = selected_indeces[final_perm]
+
+                s_sampled_batch.append(s_i[selected_indeces])
+                t_sampled_batch.append(t_i[selected_indeces])
+
+            return torch.stack(s_sampled_batch), torch.stack(t_sampled_batch)
+
+        elif self.aggregation == "random":
             s_flat = s_embeddings.view(B, C, -1).transpose(1, 2)
             t_flat = t_embeddings.view(B, C, -1).transpose(1, 2)
             
@@ -31,14 +102,18 @@ class FeatureAggregator(nn.Module):
                 s_flat = s_flat[:, rand_indices, :]
                 t_flat = t_flat[:, rand_indices, :]
         
+        
             return s_flat, t_flat
+        
+        else:
+            raise ValueError(f"The aggregation mode {self.aggregation} is not supported")
         
 
 class IntraPatientInfoNCE(nn.Module):
-    def __init__(self, temperature: float = 0.1, granularity: str = "dense", max_samples: float = 4096):
+    def __init__(self, temperature: float = 0.1, aggregation: str = "avg_pool", max_samples: float = 4096):
         super().__init__()
         self.temperature = temperature
-        self.aggregator = FeatureAggregator(granularity=granularity, max_samples=max_samples)
+        self.aggregator = FeatureAggregator(aggregation=aggregation, max_samples=max_samples)
 
     def forward(self, s_embeddings_list: list, t_embeddings_list: list, labels=None):
 

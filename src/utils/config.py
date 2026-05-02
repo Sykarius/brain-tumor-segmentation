@@ -19,7 +19,7 @@ class LossConfig:
     beta: float
     gamma: float
     temperature: float
-    granularity: Literal["dense", "region", "global"] = "dense"
+    aggregation: Literal["random", "avg_pool", "class_balanced"] = "avg_pool"
     kl_temperature: float = 2.0
     max_samples: float = 4096
 
