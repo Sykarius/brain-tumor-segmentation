@@ -11,14 +11,11 @@ from utils.checkpoint import EarlyStoppingCheckpointer
 from utils.logger import TensorBoardLogger
 from utils.config import load_config
 
-def main(config: TrainingConfig):
+def main(config: TrainingConfig, train_loader, val_loader):
     device = config.device
     print(f"Accelerating training on: {device}")
 
     epochs = config.epochs
-    
-    print("Loading DataLoaders...")
-    train_loader, val_loader = get_dataloaders(config.data)
 
     print("Initializing Dual-Network Wrapper...")
     wrapper = ContrastiveDistillationWrapper(bundle_dir=config.bundle_dir).to(device)
@@ -129,4 +126,6 @@ def main(config: TrainingConfig):
 
 if __name__ == "__main__":
     config = load_config("./config/test.yaml")
-    main(config)
+    print("Loading DataLoaders...")
+    train_loader, val_loader = get_dataloaders(config.data)
+    main(config, train_loader, val_loader)
