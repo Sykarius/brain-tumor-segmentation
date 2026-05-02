@@ -55,7 +55,7 @@ def get_dual_pipeline_transforms(
     official_transforms = get_bundle_transforms()
     transform_list = list(official_transforms.transforms)
 
-    transform_list.insert(1, EnsureChannelFirstd(keys=["image", "label"]))
+    transform_list.insert(1, EnsureChannelFirstd(keys=["image"], channel_dim=-1))
 
     # Duplicate the preprocessed image before dropping anything
     transform_list.append(CopyItemsd(keys=["image"], times=1, names=["image_full"]))
