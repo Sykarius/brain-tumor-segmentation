@@ -16,6 +16,7 @@ class CompositeDistillationLoss(nn.Module):
         self.alpha = config.alpha
         self.beta = config.beta
         self.gamma = config.gamma
+        self.kd_temperature = config.kl_temperature
 
         # Multi-label Dice loss for TC, WT, ET channels
         self.seg_loss_fn = DiceLoss(
@@ -41,11 +42,13 @@ class CompositeDistillationLoss(nn.Module):
         # Dice
         loss_seg = self.seg_loss_fn(s_logits, labels)
 
-        # Output-level distillation
-        with torch.no_grad():
-            teacher_probs = torch.sigmoid(t_logits)
+        # Output-level distillation with temperature-scaled sigmoid probabilities
+        T = self.kd_temperature
 
-        loss_kd = self.kd_loss_fn(s_logits, teacher_probs)
+        with torch.no_grad():
+            teacher_probs = torch.sigmoid(t_logits / T)
+
+        loss_kd = self.kd_loss_fn(s_logits / T, teacher_probs) * (T ** 2)
 
         # CRD
         loss_crd = self.crd_loss_fn(s_embeddings, t_embeddings, labels)
