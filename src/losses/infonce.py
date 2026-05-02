@@ -9,7 +9,7 @@ class FeatureAggregator(nn.Module):
         if aggregation not in valid_modes:
             raise ValueError(f"Aggregation mode must be one of {valid_modes}")
         self.aggregation = aggregation
-        self.max_samples = max_samples
+        self.max_samples = int(max_samples)
         self.num_classes = 4
     
     def _get_target_shape(self, D: int, H: int, W: int):
@@ -34,24 +34,27 @@ class FeatureAggregator(nn.Module):
             s_embeddings = F.adaptive_avg_pool3d(s_embeddings, target_shape)
             t_embeddings = F.adaptive_avg_pool3d(t_embeddings, target_shape)
 
-            s_flat = s_embeddings.view(B, C, -1).transpose(1, 2)
-            t_flat = t_embeddings.view(B, C, -1).transpose(1, 2)
+            s_flat = s_embeddings.reshape(B, C, -1).transpose(1, 2)
+            t_flat = t_embeddings.reshape(B, C, -1).transpose(1, 2)
 
             return s_flat, t_flat
-
+        # NOTE:
+        # This branch assumes raw single-channel class-ID labels.
+        # After BraTS preprocessing, labels are 3-channel TC/WT/ET binary masks.
+        # Do not use aggregation="class_balanced" until this branch is rewritten.
         elif self.aggregation == "class_balanced":
             if labels is None:
                 raise ValueError(f"Labels cannot be none for {self.aggregation}")
             
-            s_flat = s_embeddings.view(B, C, -1).transpose(1, 2)
-            t_flat = t_embeddings.view(B, C, -1).transpose(1, 2)
+            s_flat = s_embeddings.reshape(B, C, -1).transpose(1, 2)
+            t_flat = t_embeddings.reshape(B, C, -1).transpose(1, 2)
             
             # Ensure labels have channel dim for interpolation: (B, 1, D, H, W)
             if labels.dim() == 4:
                 labels = labels.unsqueeze(1)
 
             resized_labels = F.interpolate(labels, size=(D, H, W), mode="nearest")
-            labels_flat = resized_labels.view(B, -1)
+            labels_flat = resized_labels.reshape(B, -1)
 
             s_sampled_batch = []
             t_sampled_batch = []
@@ -91,8 +94,8 @@ class FeatureAggregator(nn.Module):
             return torch.stack(s_sampled_batch), torch.stack(t_sampled_batch)
 
         elif self.aggregation == "random":
-            s_flat = s_embeddings.view(B, C, -1).transpose(1, 2)
-            t_flat = t_embeddings.view(B, C, -1).transpose(1, 2)
+            s_flat = s_embeddings.reshape(B, C, -1).transpose(1, 2)
+            t_flat = t_embeddings.reshape(B, C, -1).transpose(1, 2)
             
             num_voxels = s_flat.size(1)
             
@@ -141,11 +144,15 @@ class IntraPatientInfoNCE(nn.Module):
                 # The "Negatives" are all the off-diagonal elements 
                 # (e.g., Student Voxel A vs Teacher Voxel B)
                 num_items = s_i.size(0)
-                labels = torch.arange(num_items, device=s_i.device)
-
-                loss = F.cross_entropy(similarity_matrix, labels)
+                targets = torch.arange(num_items, device=s_i.device)
+                
+                loss = F.cross_entropy(similarity_matrix, targets)
                 scale_loss += loss
             
             total_loss += scale_loss / B
 
-        return total_loss
+
+
+
+        
+        return total_loss / len(s_embeddings_list)
