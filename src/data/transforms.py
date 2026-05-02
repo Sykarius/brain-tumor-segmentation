@@ -1,6 +1,6 @@
 import os
 from monai.bundle import ConfigParser
-from monai.transforms import Compose, MapTransform, EnsureTyped, RandomizableTransform, CopyItemsd, ConvertToMultiChannelBasedOnBratsClassesd, LoadImaged
+from monai.transforms import Compose, MapTransform, EnsureTyped, RandomizableTransform, CopyItemsd, EnsureChannelFirstd
 import torch
 
 class DropModalityd(MapTransform):
@@ -54,6 +54,8 @@ def get_dual_pipeline_transforms(
 ):
     official_transforms = get_bundle_transforms()
     transform_list = list(official_transforms.transforms)
+
+    transform_list.insert(1, EnsureChannelFirstd(keys=["image", "label"]))
 
     # Duplicate the preprocessed image before dropping anything
     transform_list.append(CopyItemsd(keys=["image"], times=1, names=["image_full"]))
