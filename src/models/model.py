@@ -54,6 +54,11 @@ class SegResNet(nn.Module):
             key: self._build_projector(channels, latent_dim)
             for key, _, channels in self.hook_configs
         })
+        if self.is_teacher:
+            self.eval()
+            for param in self.parameters():
+                param.requires_grad = False
+    
 
     
     def _build_projector(self, in_channels, out_channels):
