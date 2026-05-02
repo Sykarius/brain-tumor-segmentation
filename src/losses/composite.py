@@ -1,6 +1,6 @@
+import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from monai.losses import DiceCELoss
+from monai.losses import DiceLoss
 
 from .infonce import IntraPatientInfoNCE
 from utils.config import LossConfig
@@ -17,18 +17,17 @@ class CompositeDistillationLoss(nn.Module):
         self.beta = config.beta
         self.gamma = config.gamma
 
-        # Dice Loss
-        self.seg_loss_fn = DiceCELoss(
-            include_background=False,
-            softmax=True,
-            to_onehot_y=False,
+        # Multi-label Dice loss for TC, WT, ET channels
+        self.seg_loss_fn = DiceLoss(
+            include_background=True,
+            sigmoid=True,
             squared_pred=True,
+            reduction="mean",
             batch=True,
         )
 
-        # 2. KL Loss
-        self.kl_temperature = config.kl_temperature
-        self.kl_loss_fn = nn.KLDivLoss(reduction="batchmean")
+        # 2. Output-level distillation with sigmoid teacher probabilities
+        self.kd_loss_fn = nn.BCEWithLogitsLoss()
 
         # 3. Intra Patient CRD
         self.crd_loss_fn = IntraPatientInfoNCE(
@@ -37,25 +36,28 @@ class CompositeDistillationLoss(nn.Module):
 
     def forward(self, s_logits, t_logits, s_embeddings, t_embeddings, labels):
 
+        labels = labels.float()
+
         # Dice
         loss_seg = self.seg_loss_fn(s_logits, labels)
 
-        # KL Loss
-        s_log_probs = F.log_softmax(s_logits / self.kl_temperature, dim=1)
-        t_probs = F.softmax(t_logits / self.kl_temperature, dim=1)
-        loss_kl = self.kl_loss_fn(s_log_probs, t_probs) * (self.kl_temperature**2)
+        # Output-level distillation
+        with torch.no_grad():
+            teacher_probs = torch.sigmoid(t_logits)
+
+        loss_kd = self.kd_loss_fn(s_logits, teacher_probs)
 
         # CRD
         loss_crd = self.crd_loss_fn(s_embeddings, t_embeddings, labels)
 
         # Total Loss
-        loss_total = (self.alpha * loss_seg) + (self.beta * loss_kl) + (self.gamma * loss_crd)
+        loss_total = (self.alpha * loss_seg) + (self.beta * loss_kd) + (self.gamma * loss_crd)
 
         # Returning loss dict for logging
         loss_dict = {
             "loss_total": loss_total.item(),
             "loss_seg": loss_seg.item(),
-            "loss_kl": loss_kl.item(),
+            "loss_kd": loss_kd.item(),
             "loss_crd": loss_crd.item(),
         }
 
