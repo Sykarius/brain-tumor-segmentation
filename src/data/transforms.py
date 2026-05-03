@@ -3,6 +3,44 @@ from monai.bundle import ConfigParser
 from monai.transforms import Compose, MapTransform, EnsureTyped, RandomizableTransform, CopyItemsd, EnsureChannelFirstd
 import torch
 
+class ConvertMSDBrainTumourLabelsd(MapTransform):
+    """
+    Convert MSD Task01_BrainTumour labels to BraTS-style region masks.
+
+    Raw MSD labels:
+        0 = background
+        1 = edema
+        2 = non-enhancing tumor
+        3 = enhancing tumor
+
+    Output channels:
+        0 = TC = labels 2 or 3
+        1 = WT = labels 1, 2, or 3
+        2 = ET = label 3
+    """
+
+    def __init__(self, keys, allow_missing_keys: bool = False):
+        super().__init__(keys, allow_missing_keys)
+
+    def __call__(self, data):
+        d = dict(data)
+
+        for key in self.keys:
+            label = d[key]
+
+            # Raw label is usually [H, W, D].
+            # If a singleton channel exists, remove it.
+            if label.ndim == 4 and label.shape[0] == 1:
+                label = label[0]
+
+            tc = (label == 2) | (label == 3)
+            wt = (label == 1) | (label == 2) | (label == 3)
+            et = label == 3
+
+            d[key] = torch.stack([tc, wt, et], dim=0).float()
+
+        return d
+
 class DropModalityd(MapTransform):
     def __init__(self, keys, modalities: int, drop_index: int, allow_missing_keys: bool = False):
         super().__init__(keys, allow_missing_keys)
@@ -56,6 +94,13 @@ def get_dual_pipeline_transforms(
     transform_list = list(official_transforms.transforms)
 
     transform_list.insert(1, EnsureChannelFirstd(keys=["image"], channel_dim=-1))
+
+    # MSD Task01 labels use 1/2/3, while MONAI's built-in BraTS converter
+    # expects the older 1/2/4 convention. Replace only the label converter.
+    for i, transform in enumerate(transform_list):
+        if transform.__class__.__name__ == "ConvertToMultiChannelBasedOnBratsClassesd":
+            transform_list[i] = ConvertMSDBrainTumourLabelsd(keys=["label"])
+            break
 
     # Duplicate the preprocessed image before dropping anything
     transform_list.append(CopyItemsd(keys=["image"], times=1, names=["image_full"]))
