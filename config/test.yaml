@@ -5,7 +5,7 @@ loss:
   beta: 0.1
   gamma: 0.1
   temperature: 1.0
-  aggregation: "avg_pool"
+  aggregation: "class_balanced"
   kl_temperature: 2.0
   max_samples: 4096
 checkpoint:
@@ -15,7 +15,7 @@ checkpoint:
   min_delta: 0.0001
   mode: max
 data:
-  root_dir: "./data/BraTS2021"
+  root_dir: "./data/BraTS"
   batch_size: 1
   num_workers: 4
   drop_index: 2

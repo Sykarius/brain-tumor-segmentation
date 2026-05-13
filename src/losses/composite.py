@@ -17,18 +17,21 @@ class CompositeDistillationLoss(nn.Module):
         self.beta = config.beta
         self.gamma = config.gamma
         self.kd_temperature = config.kl_temperature
+        
+        weights = config.class_weights
+        self.register_buffer("class_weights", torch.tensor(weights, dtype=torch.float32))
 
         # Multi-label Dice loss for TC, WT, ET channels
         self.seg_loss_fn = DiceLoss(
             include_background=True,
             sigmoid=True,
             squared_pred=True,
-            reduction="mean",
+            reduction="none",
             batch=True,
         )
 
         # 2. Output-level distillation with sigmoid teacher probabilities
-        self.kd_loss_fn = nn.BCEWithLogitsLoss()
+        self.kd_loss_fn = nn.BCEWithLogitsLoss(reduction="none")
 
         # 3. Intra Patient CRD
         self.crd_loss_fn = IntraPatientInfoNCE(
@@ -39,8 +42,9 @@ class CompositeDistillationLoss(nn.Module):
 
         labels = labels.float()
 
-        # Dice
-        loss_seg = self.seg_loss_fn(s_logits, labels)
+        # Dice with weights
+        loss_seg_raw = self.seg_loss_fn(s_logits, labels)
+        loss_seg = (loss_seg_raw * self.class_weights).mean()
 
         # Output-level distillation with temperature-scaled sigmoid probabilities
         T = self.kd_temperature
@@ -48,7 +52,10 @@ class CompositeDistillationLoss(nn.Module):
         with torch.no_grad():
             teacher_probs = torch.sigmoid(t_logits / T)
 
-        loss_kd = self.kd_loss_fn(s_logits / T, teacher_probs) * (T ** 2)
+        loss_kd_raw = self.kd_loss_fn(s_logits / T, teacher_probs)
+        w_shape = (1, self.class_weights.size(0), 1, 1, 1)
+        loss_kd_weighted = loss_kd_raw * self.class_weights.reshape(w_shape)
+        loss_kd = loss_kd_weighted.mean() * (T ** 2)
 
         # CRD
         loss_crd = self.crd_loss_fn(s_embeddings, t_embeddings, labels)

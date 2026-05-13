@@ -1,6 +1,6 @@
 import torch
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Tuple
 import yaml
 import os
 
@@ -22,6 +22,7 @@ class LossConfig:
     aggregation: Literal["random", "avg_pool", "class_balanced"] = "avg_pool"
     kl_temperature: float = 2.0
     max_samples: float = 4096
+    class_weights: Tuple[float, float, float] = (1.0, 1.0, 1.0)
 
 @dataclass
 class CheckpointConfig:

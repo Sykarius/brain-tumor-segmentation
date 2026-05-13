@@ -38,23 +38,15 @@ class FeatureAggregator(nn.Module):
             t_flat = t_embeddings.reshape(B, C, -1).transpose(1, 2)
 
             return s_flat, t_flat
-        # NOTE:
-        # This branch assumes raw single-channel class-ID labels.
-        # After BraTS preprocessing, labels are 3-channel TC/WT/ET binary masks.
-        # Do not use aggregation="class_balanced" until this branch is rewritten.
         elif self.aggregation == "class_balanced":
             if labels is None:
                 raise ValueError(f"Labels cannot be none for {self.aggregation}")
             
             s_flat = s_embeddings.reshape(B, C, -1).transpose(1, 2)
             t_flat = t_embeddings.reshape(B, C, -1).transpose(1, 2)
-            
-            # Ensure labels have channel dim for interpolation: (B, 1, D, H, W)
-            if labels.dim() == 4:
-                labels = labels.unsqueeze(1)
 
-            resized_labels = F.interpolate(labels, size=(D, H, W), mode="nearest")
-            labels_flat = resized_labels.reshape(B, -1)
+            resized_labels = F.interpolate(labels.float(), size=(D, H, W), mode="nearest")
+            labels_flat = resized_labels.reshape(B, 3, -1)
 
             s_sampled_batch = []
             t_sampled_batch = []
@@ -64,16 +56,26 @@ class FeatureAggregator(nn.Module):
                 t_i = t_flat[i]
                 l_i = labels_flat[i]
 
+                tc, wt, et = l_i[0], l_i[1], l_i[2]
+                masks = [
+                    (wt == 0), # 0: Background
+                    (wt == 1) & (tc == 0), # 1: Edema (WT)
+                    (tc == 1) & (et == 0), # 2: Necrotic Core TC
+                    (et == 1) # 3: Enhancind Tumor (ET)
+                ]
+
                 samples_per_class = self.max_samples // self.num_classes
                 sampled_indices = []
-                for cls in range(self.num_classes):
-                    cls_indices = torch.nonzero(l_i == cls).squeeze()
-                    if cls_indices.dim() == 0:
-                        cls_indices = cls_indices.unsqueeze(0)
+
+                for mask in masks:
+                    cls_indices = torch.nonzero(mask, as_tuple=True)[0]
                     num_cls_voxels = cls_indices.size(0)
 
+                    if num_cls_voxels == 0:
+                        continue
+
                     if num_cls_voxels > samples_per_class:
-                        rand_perm = torch.randperm(num_cls_voxels, device=s_i.device)
+                        rand_perm = torch.randperm(num_cls_voxels, device=s_i.device)[:samples_per_class]
                         sampled_indices.append(cls_indices[rand_perm])
                     else:
                         sampled_indices.append(cls_indices)
@@ -82,7 +84,7 @@ class FeatureAggregator(nn.Module):
 
                 if selected_indeces.size(0) < self.max_samples:
                     shortfall = self.max_samples - selected_indeces.size(0)
-                    pad_indices = torch.randperm(l_i.size(0), device=s_i.device)[:shortfall]
+                    pad_indices = torch.randperm(l_i.size(1), device=s_i.device)[:shortfall]
                     selected_indeces = torch.cat([selected_indeces, pad_indices])
                 
                 final_perm = torch.randperm(selected_indeces.size(0), device=s_i.device)
@@ -151,8 +153,4 @@ class IntraPatientInfoNCE(nn.Module):
             
             total_loss += scale_loss / B
 
-
-
-
-        
         return total_loss / len(s_embeddings_list)
